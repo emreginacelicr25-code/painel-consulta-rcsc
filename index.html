@@ -74,7 +74,7 @@
     <h1>Painel de Consulta</h1>
     <p>E.M. Regina Celi da Silva Cerdeira<br>Digite seu nome e o PIN de acesso</p>
     <input id="in-professor" type="text" placeholder="Seu nome" autocomplete="off">
-    <input id="in-pin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" autocomplete="off">
+    <input id="in-pin" type="password" inputmode="numeric" placeholder="Matrícula (6 dígitos)" maxlength="6" autocomplete="off">
     <button id="btn-entrar">Entrar</button>
     <div class="erro-msg" id="login-erro"></div>
   </div>
@@ -115,6 +115,10 @@ const CLIENTES = {
     'https://yrowedtrbpreppleramb.supabase.co',
     'sb_publishable_RPpW4wX6JQYjwe1hHEn7OA_8Y1WlAXL'
   ),
+  gestao360: window.supabase.createClient(
+    'https://kctdacbwfppbtzxcszwx.supabase.co',
+    'sb_publishable_r48wyEsGz_b3UxCU3pHNIA_egBcpRZq'
+  ),
 };
 
 const ABAS = [
@@ -138,34 +142,34 @@ document.getElementById('in-pin').addEventListener('keydown', e=>{ if(e.key==='E
 
 async function fazerLogin(){
   const nome = document.getElementById('in-professor').value.trim();
-  const pin  = document.getElementById('in-pin').value.trim();
+  const matricula = document.getElementById('in-pin').value.trim();
   const erroEl = document.getElementById('login-erro');
   erroEl.textContent = '';
 
-  if(!nome || !pin){
-    erroEl.textContent = 'Preencha seu nome e o PIN.';
+  if(!nome || matricula.length!==6){
+    erroEl.textContent = 'Preencha seu nome e a matrícula (6 dígitos).';
     return;
   }
 
   const btn = document.getElementById('btn-entrar');
   btn.disabled = true; btn.textContent = 'Entrando...';
 
-  const { data, error } = await CLIENTES.triagem
-    .from('painel_consulta_usuarios')
+  const { data, error } = await CLIENTES.gestao360
+    .from('funcionarios')
     .select('*')
-    .ilike('professor', nome)
-    .eq('pin', pin)
+    .ilike('nome_completo', `%${nome}%`)
+    .eq('matricula', matricula)
     .eq('ativo', true)
     .maybeSingle();
 
   btn.disabled = false; btn.textContent = 'Entrar';
 
   if(error || !data){
-    erroEl.textContent = 'Nome ou PIN incorretos, ou acesso inativo.';
+    erroEl.textContent = 'Nome ou matrícula incorretos, ou cadastro inativo.';
     return;
   }
 
-  PROFESSOR_LOGADO = data.professor;
+  PROFESSOR_LOGADO = data.nome_completo;
 
   // registra o acesso (não bloqueia o login se falhar)
   CLIENTES.triagem.from('painel_consulta_acessos').insert({ professor: PROFESSOR_LOGADO }).then(()=>{});
