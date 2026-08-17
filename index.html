@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Consulta — E.M. Regina Celi</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
+<style>
+  :root{
+    --azul:#1e3a5f; --azul-claro:#2c5480; --fundo:#f3f5f8; --card:#ffffff;
+    --texto:#1f2937; --texto-suave:#6b7280; --borda:#e5e7eb;
+    --ok:#16a34a; --alerta:#d97706; --erro:#dc2626;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--fundo);color:var(--texto);}
+  header{background:linear-gradient(135deg,var(--azul),var(--azul-claro));color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  header .titulo{display:flex;align-items:center;gap:12px;}
+  header .titulo .icone{font-size:28px;}
+  header h1{font-size:18px;margin:0;}
+  header .sub{font-size:12px;opacity:.85;margin-top:2px;}
+  header .quem{font-size:13px;text-align:right;}
+  header button{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;padding:6px 14px;border-radius:8px;cursor:pointer;}
+  header button:hover{background:rgba(255,255,255,.28);}
+
+  nav{display:flex;overflow-x:auto;background:#0f2942;padding:0 8px;}
+  nav button{background:none;border:none;color:#cbd5e1;padding:12px 16px;font-size:14px;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;}
+  nav button.ativo{color:#fff;border-bottom:3px solid #ffb020;font-weight:600;}
+
+  main{padding:18px;max-width:1200px;margin:0 auto;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
+  .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center;}
+  .card .num{font-size:28px;font-weight:700;color:var(--azul);}
+  .card .lbl{font-size:12px;color:var(--texto-suave);margin-top:4px;}
+
+  .painel{background:var(--card);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .painel h2{margin:0 0 14px;font-size:16px;color:var(--azul);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr;}}
+  canvas{max-height:280px;}
+  #nuvem{width:100%;height:240px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--borda);}
+  th{color:var(--texto-suave);font-weight:600;font-size:11px;text-transform:uppercase;}
+  tr:hover{background:#f8fafc;}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+  .tag.ok{background:#dcfce7;color:var(--ok);}
+  .tag.alerta{background:#fef3c7;color:var(--alerta);}
+  .tag.erro{background:#fee2e2;color:var(--erro);}
+  .vazio{color:var(--texto-suave);font-style:italic;padding:20px 0;text-align:center;}
+  .carregando{color:var(--texto-suave);padding:20px 0;text-align:center;}
+
+  /* Login */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--azul),var(--azul-claro));padding:20px;}
+  #login .box{background:#fff;border-radius:16px;padding:32px 28px;max-width:340px;width:100%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.25);}
+  #login .box .icone{font-size:40px;}
+  #login h1{font-size:18px;margin:8px 0 2px;color:var(--azul);}
+  #login p{font-size:13px;color:var(--texto-suave);margin-bottom:20px;}
+  #login input{width:100%;padding:12px;border:1px solid var(--borda);border-radius:10px;font-size:16px;margin-bottom:10px;text-align:center;letter-spacing:4px;}
+  #login button{width:100%;padding:12px;border:none;border-radius:10px;background:var(--azul);color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+  #login button:disabled{opacity:.6;}
+  #login .erro-msg{color:var(--erro);font-size:13px;margin-top:10px;min-height:16px;}
+
+  #app{display:none;}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <div class="icone">🏫</div>
+    <h1>Painel de Consulta</h1>
+    <p>E.M. Regina Celi da Silva Cerdeira<br>Digite seu nome e o PIN de acesso</p>
+    <input id="in-professor" type="text" placeholder="Seu nome" autocomplete="off">
+    <input id="in-pin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" autocomplete="off">
+    <button id="btn-entrar">Entrar</button>
+    <div class="erro-msg" id="login-erro"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <div class="titulo">
+      <span class="icone">📊</span>
+      <div>
+        <h1>Painel de Consulta — Regina Celi</h1>
+        <div class="sub">Dados consolidados do Universo Digital</div>
+      </div>
+    </div>
+    <div class="quem">
+      <div id="quem-nome"></div>
+      <button id="btn-sair">Sair</button>
+    </div>
+  </header>
+
+  <nav id="nav"></nav>
+
+  <main id="conteudo"></main>
+</div>
+
+<script>
+/* ===================== CONFIG ===================== */
+const CLIENTES = {
+  inclusao: window.supabase.createClient(
+    'https://vjxsvcohipeyepfbkmro.supabase.co',
+    'sb_publishable_gn6TBJ888I6cT137tPc3DA_-Biu4ipo'
+  ),
+  triagem: window.supabase.createClient(
+    'https://wulihgevyzzhysnxzhoy.supabase.co',
+    'sb_publishable_YTaSssCbwiudqrAoRx2YpA_CrEhc4Sb'
+  ),
+  pmadc: window.supabase.createClient(
+    'https://yrowedtrbpreppleramb.supabase.co',
+    'sb_publishable_RPpW4wX6JQYjwe1hHEn7OA_8Y1WlAXL'
+  ),
+};
+
+const ABAS = [
+  { id:'festa',       nome:'🎪 Festa Junina' },
+  { id:'jornada',     nome:'📘 Jornada Pedagógica' },
+  { id:'percepcao',   nome:'🗣️ Percepção Docente' },
+  { id:'suporte',     nome:'♿ Classificação de Suporte' },
+  { id:'inclusao',    nome:'🤝 Inclusão' },
+  { id:'transporte',  nome:'🚐 Transporte' },
+  { id:'limpeza',     nome:'🧹 Limpeza' },
+  { id:'pmadc',       nome:'📖 PMADC' },
+  { id:'impressao',   nome:'🖨️ Impressão' },
+];
+
+let ABA_ATUAL = 'festa';
+let PROFESSOR_LOGADO = null;
+
+/* ===================== LOGIN ===================== */
+document.getElementById('btn-entrar').addEventListener('click', fazerLogin);
+document.getElementById('in-pin').addEventListener('keydown', e=>{ if(e.key==='Enter') fazerLogin(); });
+
+async function fazerLogin(){
+  const nome = document.getElementById('in-professor').value.trim();
+  const pin  = document.getElementById('in-pin').value.trim();
+  const erroEl = document.getElementById('login-erro');
+  erroEl.textContent = '';
+
+  if(!nome || !pin){
+    erroEl.textContent = 'Preencha seu nome e o PIN.';
+    return;
+  }
+
+  const btn = document.getElementById('btn-entrar');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+
+  const { data, error } = await CLIENTES.triagem
+    .from('painel_consulta_usuarios')
+    .select('*')
+    .ilike('professor', nome)
+    .eq('pin', pin)
+    .eq('ativo', true)
+    .maybeSingle();
+
+  btn.disabled = false; btn.textContent = 'Entrar';
+
+  if(error || !data){
+    erroEl.textContent = 'Nome ou PIN incorretos, ou acesso inativo.';
+    return;
+  }
+
+  PROFESSOR_LOGADO = data.professor;
+
+  // registra o acesso (não bloqueia o login se falhar)
+  CLIENTES.triagem.from('painel_consulta_acessos').insert({ professor: PROFESSOR_LOGADO }).then(()=>{});
+
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('quem-nome').textContent = PROFESSOR_LOGADO;
+  montarNav();
+  renderAba('festa');
+}
+
+document.getElementById('btn-sair').addEventListener('click', ()=>{
+  location.reload();
+});
+
+/* ===================== NAV ===================== */
+function montarNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  ABAS.forEach(a=>{
+    const b = document.createElement('button');
+    b.textContent = a.nome;
+    b.dataset.id = a.id;
+    if(a.id===ABA_ATUAL) b.classList.add('ativo');
+    b.addEventListener('click', ()=>renderAba(a.id));
+    nav.appendChild(b);
+  });
+}
+
+function marcarAbaAtiva(id){
+  ABA_ATUAL = id;
+  document.querySelectorAll('nav button').forEach(b=>{
+    b.classList.toggle('ativo', b.dataset.id===id);
+  });
+}
+
+/* ===================== HELPERS ===================== */
+function el(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
+
+function cardsHTML(items){
+  return `<div class="cards">${items.map(i=>`
+    <div class="card"><div class="num">${i.num}</div><div class="lbl">${i.lbl}</div></div>
+  `).join('')}</div>`;
+}
+
+function media(arr){
+  const nums = arr.filter(v=>typeof v==='number' && !isNaN(v));
+  if(!nums.length) return 0;
+  return (nums.reduce((a,b)=>a+b,0)/nums.length);
+}
+
+function tabelaHTML(colunas, linhas){
+  if(!linhas.length) return `<div class="vazio">Ainda não há registros.</div>`;
+  return `<div style="overflow-x:auto"><table>
+    <thead><tr>${colunas.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+    <tbody>${linhas.join('')}</tbody>
+  </table></div>`;
+}
+
+function graficoBarra(canvasId, labels, valores, titulo){
+  const ctx = document.getElementById(canvasId);
+  if(!ctx) return;
+  new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:titulo, data:valores, backgroundColor:'#2c5480' }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ y:{ beginAtZero:true } },
+      plugins:{ legend:{ display:false } } }
+  });
+}
+
+function nuvemPalavras(canvasId, textos){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  const stop = new Set(['de','da','do','das','dos','a','o','as','os','e','que','para','com','em','um','uma','no','na','nos','nas','se','ao','aos','é','foi','ser','mais','muito','não','sim','como','por','sua','seu','suas','seus','isso','esse','essa']);
+  const freq = {};
+  textos.filter(Boolean).forEach(t=>{
+    String(t).toLowerCase().replace(/[.,!?;:()"']/g,'').split(/\s+/).forEach(w=>{
+      if(w.length>2 && !stop.has(w)) freq[w] = (freq[w]||0)+1;
+    });
+  });
+  const lista = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,60);
+  if(!lista.length){ canvas.parentElement.innerHTML = '<div class="vazio">Sem comentários suficientes ainda.</div>'; return; }
+  canvas.width = canvas.offsetWidth; canvas.height = 240;
+  WordCloud(canvas, { list:lista, gridSize:8, weightFactor:14, fontFamily:'sans-serif',
+    color:()=> ['#1e3a5f','#2c5480','#d97706','#16a34a'][Math.floor(Math.random()*4)],
+    backgroundColor:'#ffffff', rotateRatio:0.2 });
+}
+
+/* ===================== ROTEAMENTO DE ABAS ===================== */
+async function renderAba(id){
+  marcarAbaAtiva(id);
+  const c = document.getElementById('conteudo');
+  c.innerHTML = '<div class="carregando">Carregando dados...</div>';
+  try{
+    switch(id){
+      case 'festa':      await abaFesta(c); break;
+      case 'jornada':    await abaJornada(c); break;
+      case 'percepcao':  await abaPercepcao(c); break;
+      case 'suporte':    await abaSuporte(c); break;
+      case 'inclusao':   await abaInclusao(c); break;
+      case 'transporte': await abaTransporte(c); break;
+      case 'limpeza':    await abaLimpeza(c); break;
+      case 'pmadc':      await abaPmadc(c); break;
+      case 'impressao':  await abaImpressao(c); break;
+    }
+  }catch(e){
+    c.innerHTML = `<div class="painel"><div class="vazio">Erro ao carregar: ${e.message||e}</div></div>`;
+  }
+}
+
+/* ===== Festa Junina ===== */
+async function abaFesta(c){
+  const { data } = await CLIENTES.inclusao.from('avaliacao_festa_junina').select('*');
+  const d = data||[];
+  const areas = [
+    ['Quadra','quadra_nota'],['Estacionamento','estacionamento_nota'],['Parquinho','parquinho_nota'],
+    ['Auditório','auditorio_nota'],['Feira do Meio','feira_meio_nota'],['Inclusão','inclusao_nota'],
+    ['Organização','organizacao_nota'],['Comunicação','comunicacao_nota']
+  ];
+  const medias = areas.map(([lbl,campo])=>media(d.map(r=>r[campo])).toFixed(1));
+
+  c.innerHTML = cardsHTML([
+    {num:d.length, lbl:'Avaliações recebidas'},
+    {num:media(d.map(r=>r.nota_geral)).toFixed(1), lbl:'Nota geral média'},
+  ]) + `
+  <div class="grid2">
+    <div class="painel"><h2>Nota média por área</h2><canvas id="g1"></canvas></div>
+    <div class="painel"><h2>Nuvem de comentários</h2><canvas id="nuvem"></canvas></div>
+  </div>`;
+
+  graficoBarra('g1', areas.map(a=>a[0]), medias, 'Nota média (0-5)');
+  const textos = d.flatMap(r=>[r.quadra_comentario,r.estacionamento_comentario,r.parquinho_comentario,r.auditorio_comentario,r.feira_meio_comentario,r.inclusao_comentario,r.pontos_positivos,r.pontos_melhorar,r.sugestoes]);
+  nuvemPalavras('nuvem', textos);
+}
+
+/* ===== Jornada Pedagógica ===== */
+async function abaJornada(c){
+  const { data } = await CLIENTES.inclusao.from('avaliacao_jornada').select('*');
+  const d = data||[];
+  const campos = [
+    ['Avaliação geral','avaliacao_geral'],['Clareza das camadas','clareza_camadas'],
+    ['Utilidade das oficinas','utilidade_oficinas'],['Didática dos facilitadores','didatica_facilitadores'],
+    ['Preparo para aplicar','preparo_aplicar']
+  ];
+  const medias = campos.map(([lbl,campo])=>media(d.map(r=>r[campo])).toFixed(1));
+  const prontos = d.filter(r=>String(r.plano_pronto).toLowerCase().startsWith('s')).length;
+
+  c.innerHTML = cardsHTML([
+    {num:d.length, lbl:'Respostas'},
+    {num:`${prontos}/${d.length}`, lbl:'Saíram com plano pronto'},
+  ]) + `
+  <div class="grid2">
+    <div class="painel"><h2>Médias de avaliação (0-5)</h2><canvas id="g1"></canvas></div>
+    <div class="painel"><h2>Nuvem de comentários</h2><canvas id="nuvem"></canvas></div>
+  </div>`;
+  graficoBarra('g1', campos.map(a=>a[0]), medias, 'Média');
+  nuvemPalavras('nuvem', d.flatMap(r=>[r.pontos_positivos,r.pontos_melhoria]));
+}
+
+/* ===== Percepção Docente ===== */
+async function abaPercepcao(c){
+  const { data } = await CLIENTES.inclusao.from('percepcao_docente').select('*');
+  const d = data||[];
+  c.innerHTML = cardsHTML([{num:d.length, lbl:'Respostas recebidas'}]) + `
+  <div class="painel"><h2>Nuvem de palavras — gatilhos, estratégias, apoio e sugestões</h2><canvas id="nuvem"></canvas></div>
+  <div class="painel"><h2>Respostas individuais</h2><div id="tabela"></div></div>`;
+  nuvemPalavras('nuvem', d.flatMap(r=>[r.gatilhos,r.estrategias,r.apoio,r.sugestoes]));
+  const linhas = d.map(r=>`<tr><td>${r.turmas||''}</td><td>${r.tempo_atuacao||''}</td><td>${r.frequencia||''}</td><td>${r.gatilhos||''}</td></tr>`);
+  document.getElementById('tabela').innerHTML = tabelaHTML(['Turmas','Tempo de atuação','Frequência','Gatilhos'], linhas);
+}
+
+/* ===== Suporte ===== */
+async function abaSuporte(c){
+  const { data } = await CLIENTES.inclusao.from('avaliacoes_suporte').select('*');
+  const d = data||[];
+  const porNivel = {};
+  d.forEach(r=>{ const l = r.suporte_label||`Nível ${r.suporte_nivel}`; porNivel[l]=(porNivel[l]||0)+1; });
+  const labels = Object.keys(porNivel), valores = Object.values(porNivel);
+
+  c.innerHTML = cardsHTML([{num:d.length, lbl:'Alunos avaliados'}]) + `
+  <div class="grid2">
+    <div class="painel"><h2>Distribuição por nível de suporte</h2><canvas id="g1"></canvas></div>
+    <div class="painel"><h2>Lista de alunos</h2><div id="tabela" style="max-height:280px;overflow:auto"></div></div>
+  </div>`;
+  graficoBarra('g1', labels, valores, 'Alunos');
+  const linhas = d.map(r=>`<tr><td>${r.nome_aluno||''}</td><td>${r.turma||''}</td><td>${r.deficiencia||''}</td><td>${r.suporte_label||''}</td></tr>`);
+  document.getElementById('tabela').innerHTML = tabelaHTML(['Aluno','Turma','Deficiência','Nível de suporte'], linhas);
+}
+
+/* ===== Inclusão (profissionais + demandas) ===== */
+async function abaInclusao(c){
+  const [{data:profs}, {data:alunos}] = await Promise.all([
+    CLIENTES.inclusao.from('profissionais').select('*'),
+    CLIENTES.inclusao.from('alunos').select('*'),
+  ]);
+  const p = profs||[], a = alunos||[];
+  const semProf = a.filter(al=>!al.prof_id);
+
+  c.innerHTML = cardsHTML([
+    {num:p.length, lbl:'Profissionais de apoio'},
+    {num:a.length, lbl:'Alunos acompanhados'},
+    {num:semProf.length, lbl:'Alunos sem profissional'},
+  ]) + `
+  <div class="painel"><h2>⚠️ Alunos sem profissional de apoio</h2><div id="tabela-demandas"></div></div>
+  <div class="painel"><h2>Profissionais e alunos que acompanham</h2><div id="tabela-profs"></div></div>`;
+
+  document.getElementById('tabela-demandas').innerHTML = tabelaHTML(
+    ['Aluno','Turma','Turno','Suporte'],
+    semProf.map(al=>`<tr><td>${al.nome||''}</td><td>${al.turma||''}</td><td>${al.turno||''}</td><td>${al.suporte||''}</td></tr>`)
+  );
+
+  const linhasP = p.map(pr=>{
+    const alunosDele = a.filter(al=>al.prof_id===pr.id).map(al=>al.nome).join(', ') || '<span class="vazio">nenhum</span>';
+    return `<tr><td>${pr.nome||''}</td><td>${pr.tipo||''}</td><td>${(pr.turmas||[]).join(', ')}</td><td>${alunosDele}</td></tr>`;
+  });
+  document.getElementById('tabela-profs').innerHTML = tabelaHTML(['Profissional','Tipo','Turmas','Alunos acompanhados'], linhasP);
+}
+
+/* ===== Transporte ===== */
+async function abaTransporte(c){
+  const [{data:vans}, {data:alunos}] = await Promise.all([
+    CLIENTES.triagem.from('transporte_vans').select('*'),
+    CLIENTES.triagem.from('transporte_alunos').select('*'),
+  ]);
+  const v = vans||[], a = alunos||[];
+
+  c.innerHTML = cardsHTML([
+    {num:v.length, lbl:'Vans ativas'},
+    {num:a.length, lbl:'Alunos transportados'},
+  ]) + `<div class="painel"><h2>Vans, motoristas, monitores e alunos</h2><div id="tabela"></div></div>`;
+
+  const blocos = v.map(van=>{
+    const alunosDaVan = a.filter(al=>al.van===van.id);
+    const linhas = alunosDaVan.map(al=>`<tr><td>${al.name||''}</td><td>${al.turma||''}</td><td>${al.cid||'—'}</td></tr>`);
+    return `
+    <h3 style="margin:18px 0 6px;color:#1e3a5f">Van ${van.name||van.id} — Motorista: ${van.driver||'—'} · Monitores: ${[van.mon1,van.mon2].filter(Boolean).join(' / ')||'—'}</h3>
+    ${tabelaHTML(['Aluno','Turma','CID'], linhas)}`;
+  }).join('');
+  document.getElementById('tabela').innerHTML = blocos || '<div class="vazio">Nenhuma van cadastrada.</div>';
+}
+
+/* ===== Limpeza ===== */
+async function abaLimpeza(c){
+  const hoje = new Date().toISOString().slice(0,10);
+  const [{data:tarefas}, {data:execHoje}] = await Promise.all([
+    CLIENTES.triagem.from('limpeza_tarefas').select('*').order('ordem'),
+    CLIENTES.triagem.from('limpeza_execucoes').select('*').eq('data', hoje),
+  ]);
+  const t = tarefas||[], e = execHoje||[];
+  const concluidasHoje = e.filter(x=>x.concluida).length;
+
+  c.innerHTML = cardsHTML([
+    {num:t.length, lbl:'Tarefas cadastradas'},
+    {num:`${concluidasHoje}/${t.length}`, lbl:'Concluídas hoje'},
+  ]) + `<div class="painel"><h2>Atribuições por ASG</h2><div id="tabela"></div></div>`;
+
+  const porAsg = {};
+  t.forEach(tf=>{ (porAsg[tf.asg_nome]=porAsg[tf.asg_nome]||[]).push(tf); });
+
+  const blocos = Object.entries(porAsg).map(([asg, lista])=>{
+    const linhas = lista.map(tf=>{
+      const feito = e.find(x=>x.tarefa_id===tf.id);
+      const tag = feito?.concluida ? '<span class="tag ok">feito hoje</span>' : '<span class="tag alerta">pendente hoje</span>';
+      return `<tr><td>${tf.descricao||''}</td><td>${(tf.dias||[]).join(', ')}</td><td>${tf.hora_inicio||''}–${tf.hora_fim||''}</td><td>${tag}</td></tr>`;
+    });
+    return `<h3 style="margin:18px 0 6px;color:#1e3a5f">${asg}</h3>${tabelaHTML(['Ambiente/tarefa','Dias','Horário','Status hoje'], linhas)}`;
+  }).join('');
+  document.getElementById('tabela').innerHTML = blocos || '<div class="vazio">Nenhuma tarefa cadastrada.</div>';
+}
+
+/* ===== PMADC ===== */
+async function abaPmadc(c){
+  const { data } = await CLIENTES.pmadc.from('respostas_pmadc').select('*');
+  const d = data||[];
+  const porSegmento = {};
+  d.forEach(r=>{ porSegmento[r.segmento]=(porSegmento[r.segmento]||0)+1; });
+
+  c.innerHTML = cardsHTML([{num:d.length, lbl:'Professores que responderam'}]) + `
+  <div class="grid2">
+    <div class="painel"><h2>Respostas por segmento</h2><canvas id="g1"></canvas></div>
+    <div class="painel"><h2>Nuvem — síntese das sugestões</h2><canvas id="nuvem"></canvas></div>
+  </div>`;
+  graficoBarra('g1', Object.keys(porSegmento), Object.values(porSegmento), 'Respostas');
+  nuvemPalavras('nuvem', d.flatMap(r=>[r.sintese_alteracoes,r.sintese_exclusoes,r.sintese_inclusoes,r.sintese_comentarios]));
+}
+
+/* ===== Impressão ===== */
+const COTAS_TURMA = { padrao_fund:300, infantil:150, bercario:80, especial:50, especialistas:60 };
+function cotaDaTurma(turma){
+  if(!turma) return COTAS_TURMA.padrao_fund;
+  if(['2002','2004','2007'].includes(turma)) return COTAS_TURMA.bercario;
+  if(turma.startsWith('20')) return COTAS_TURMA.infantil;
+  if(turma.startsWith('10')) return COTAS_TURMA.especial;
+  return COTAS_TURMA.padrao_fund;
+}
+function trimestreAtual(){
+  const m = new Date().getMonth()+1;
+  if(m<=4) return {ini:`${new Date().getFullYear()}-01-01`, fim:`${new Date().getFullYear()}-04-30`};
+  if(m<=8) return {ini:`${new Date().getFullYear()}-05-01`, fim:`${new Date().getFullYear()}-08-31`};
+  return {ini:`${new Date().getFullYear()}-09-01`, fim:`${new Date().getFullYear()}-12-31`};
+}
+async function abaImpressao(c){
+  const {ini,fim} = trimestreAtual();
+  const { data } = await CLIENTES.triagem.from('impressoes').select('*')
+    .eq('status','concluido').gte('criado_em', ini).lte('criado_em', fim);
+  const d = data||[];
+  const totalGeral = d.reduce((s,r)=>s+(r.quantidade_copias||0),0);
+
+  const porTurma = {};
+  d.forEach(r=>{ porTurma[r.turma]=(porTurma[r.turma]||0)+(r.quantidade_copias||0); });
+
+  c.innerHTML = cardsHTML([
+    {num:d.length, lbl:'Pedidos concluídos no trimestre'},
+    {num:`${totalGeral}/10000`, lbl:'Folhas usadas (escola)'},
+  ]) + `<div class="painel"><h2>Uso de cota por turma (trimestre atual)</h2><div id="tabela"></div></div>`;
+
+  const linhas = Object.entries(porTurma).sort((a,b)=>b[1]-a[1]).map(([turma,usado])=>{
+    const cota = cotaDaTurma(turma);
+    const pct = Math.round((usado/cota)*100);
+    const tag = pct>=100 ? '<span class="tag erro">estourou</span>' : pct>=80 ? '<span class="tag alerta">em alerta</span>' : '<span class="tag ok">ok</span>';
+    return `<tr><td>${turma||'—'}</td><td>${usado} / ${cota}</td><td>${pct}%</td><td>${tag}</td></tr>`;
+  });
+  document.getElementById('tabela').innerHTML = tabelaHTML(['Turma','Folhas usadas / cota','%','Status'], linhas);
+}
+</script>
+</body>
+</html>
