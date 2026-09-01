@@ -140,6 +140,17 @@ let PROFESSOR_LOGADO = null;
 document.getElementById('btn-entrar').addEventListener('click', fazerLogin);
 document.getElementById('in-pin').addEventListener('keydown', e=>{ if(e.key==='Enter') fazerLogin(); });
 
+// Modo de visualização: acesse a URL com ?preview=1 no final para pular o login
+// e ver o layout/abas direto, sem precisar de matrícula/PIN (não usar em produção)
+if (new URLSearchParams(location.search).get('preview') === '1') {
+  PROFESSOR_LOGADO = 'Visualização (modo preview)';
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('quem-nome').textContent = PROFESSOR_LOGADO;
+  montarNav();
+  renderAba('festa');
+}
+
 async function fazerLogin(){
   const nome = document.getElementById('in-professor').value.trim();
   const matricula = document.getElementById('in-pin').value.trim();
