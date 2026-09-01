@@ -74,7 +74,7 @@
     <h1>Painel de Consulta</h1>
     <p>E.M. Regina Celi da Silva Cerdeira<br>Digite seu nome e o PIN de acesso</p>
     <input id="in-professor" type="text" placeholder="Seu nome" autocomplete="off">
-    <input id="in-pin" type="password" inputmode="numeric" placeholder="Matrícula (6 dígitos)" maxlength="6" autocomplete="off">
+    <input id="in-pin" type="password" inputmode="numeric" placeholder="PIN" maxlength="8" autocomplete="off">
     <button id="btn-entrar">Entrar</button>
     <div class="erro-msg" id="login-erro"></div>
   </div>
@@ -115,10 +115,6 @@ const CLIENTES = {
     'https://yrowedtrbpreppleramb.supabase.co',
     'sb_publishable_RPpW4wX6JQYjwe1hHEn7OA_8Y1WlAXL'
   ),
-  gestao360: window.supabase.createClient(
-    'https://kctdacbwfppbtzxcszwx.supabase.co',
-    'sb_publishable_r48wyEsGz_b3UxCU3pHNIA_egBcpRZq'
-  ),
 };
 
 const ABAS = [
@@ -136,12 +132,12 @@ const ABAS = [
 let ABA_ATUAL = 'festa';
 let PROFESSOR_LOGADO = null;
 
-/* ===================== LOGIN ===================== */
+/* ===================== LOGIN (por PIN) ===================== */
 document.getElementById('btn-entrar').addEventListener('click', fazerLogin);
 document.getElementById('in-pin').addEventListener('keydown', e=>{ if(e.key==='Enter') fazerLogin(); });
 
 // Modo de visualização: acesse a URL com ?preview=1 no final para pular o login
-// e ver o layout/abas direto, sem precisar de matrícula/PIN (não usar em produção)
+// e ver o layout/abas direto, sem precisar de PIN (não usar em produção)
 if (new URLSearchParams(location.search).get('preview') === '1') {
   PROFESSOR_LOGADO = 'Visualização (modo preview)';
   document.getElementById('login').style.display = 'none';
@@ -153,34 +149,34 @@ if (new URLSearchParams(location.search).get('preview') === '1') {
 
 async function fazerLogin(){
   const nome = document.getElementById('in-professor').value.trim();
-  const matricula = document.getElementById('in-pin').value.trim();
+  const pin  = document.getElementById('in-pin').value.trim();
   const erroEl = document.getElementById('login-erro');
   erroEl.textContent = '';
 
-  if(!nome || matricula.length!==6){
-    erroEl.textContent = 'Preencha seu nome e a matrícula (6 dígitos).';
+  if(!nome || !pin){
+    erroEl.textContent = 'Preencha seu nome e o PIN.';
     return;
   }
 
   const btn = document.getElementById('btn-entrar');
   btn.disabled = true; btn.textContent = 'Entrando...';
 
-  const { data, error } = await CLIENTES.gestao360
-    .from('funcionarios')
+  const { data, error } = await CLIENTES.triagem
+    .from('painel_consulta_usuarios')
     .select('*')
-    .ilike('nome_completo', `%${nome}%`)
-    .eq('matricula', matricula)
+    .ilike('professor', `%${nome}%`)
+    .eq('pin', pin)
     .eq('ativo', true)
     .maybeSingle();
 
   btn.disabled = false; btn.textContent = 'Entrar';
 
   if(error || !data){
-    erroEl.textContent = 'Nome ou matrícula incorretos, ou cadastro inativo.';
+    erroEl.textContent = 'Nome ou PIN incorretos, ou acesso inativo.';
     return;
   }
 
-  PROFESSOR_LOGADO = data.nome_completo;
+  PROFESSOR_LOGADO = data.professor;
 
   // registra o acesso (não bloqueia o login se falhar)
   CLIENTES.triagem.from('painel_consulta_acessos').insert({ professor: PROFESSOR_LOGADO }).then(()=>{});
@@ -193,7 +189,7 @@ async function fazerLogin(){
 }
 
 document.getElementById('btn-sair').addEventListener('click', ()=>{
-  location.reload();
+  location.href = location.pathname;
 });
 
 /* ===================== NAV ===================== */
@@ -218,8 +214,6 @@ function marcarAbaAtiva(id){
 }
 
 /* ===================== HELPERS ===================== */
-function el(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
-
 function cardsHTML(items){
   return `<div class="cards">${items.map(i=>`
     <div class="card"><div class="num">${i.num}</div><div class="lbl">${i.lbl}</div></div>
